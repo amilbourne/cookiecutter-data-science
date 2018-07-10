@@ -16,14 +16,28 @@ else
 HAS_CONDA=True
 endif
 
+define CONDA_ENV_ERROR
+You are in the wrong conda env. Activate with:
+source activate $(PROJECT_NAME)
+If this fails you may need:
+make create_environment
+
+endef
+
 #################################################################################
 # COMMANDS                                                                      #
 #################################################################################
 
 ## Install Python Dependencies
 requirements: test_environment
+ifeq (True,$(HAS_CONDA))
+	conda update pip setuptools wheel
+	conda install --file requirements.txt
+else
 	pip install -U pip setuptools wheel
 	pip install -r requirements.txt
+endif
+	pip install -e .
 
 ## Make Dataset
 data: requirements
@@ -39,7 +53,7 @@ lint:
 	flake8 src
 
 ## Upload Data to S3
-sync_data_to_s3:
+sync_data_to_s3: test_environment
 ifeq (default,$(PROFILE))
 	aws s3 sync data/ s3://$(BUCKET)/data/
 else
@@ -47,7 +61,7 @@ else
 endif
 
 ## Download Data from S3
-sync_data_from_s3:
+sync_data_from_s3: test_environment
 ifeq (default,$(PROFILE))
 	aws s3 sync s3://$(BUCKET)/data/ data/
 else
@@ -57,13 +71,14 @@ endif
 ## Set up python interpreter environment
 create_environment:
 ifeq (True,$(HAS_CONDA))
-		@echo ">>> Detected conda, creating conda environment."
+	@echo ">>> Detected conda, creating conda environment."
 ifeq (3,$(findstring 3,$(PYTHON_INTERPRETER)))
 	conda create --name $(PROJECT_NAME) python=3
 else
 	conda create --name $(PROJECT_NAME) python=2.7
 endif
-		@echo ">>> New conda env created. Activate with:\nsource activate $(PROJECT_NAME)"
+	conda config --append channels conda-forge
+	@echo ">>> New conda env created. Activate with:\nsource activate $(PROJECT_NAME)"
 else
 	@pip install -q virtualenv virtualenvwrapper
 	@echo ">>> Installing virtualenvwrapper if not already intalled.\nMake sure the following lines are in shell startup file\n\
@@ -74,6 +89,11 @@ endif
 
 ## Test python environment is setup correctly
 test_environment:
+ifeq (True,$(HAS_CONDA))
+ifneq ($(PROJECT_NAME),$(shell conda env list | grep '\*' | cut -f 1 -d " "))
+	$(error $(CONDA_ENV_ERROR)))
+endif
+endif
 	$(PYTHON_INTERPRETER) test_environment.py
 
 #################################################################################
